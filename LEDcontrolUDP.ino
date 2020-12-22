@@ -217,9 +217,10 @@ void receivePacket(AsyncUDPPacket packet)
 
   // Works - prints out correct data that is sent via UDP
   // Parse out the recieved packet inside this loop minus the checksum and \c\r
-  for (int i; i<(dataLength-5); i++){
+  for (int i; i<(dataLength-2); i++){
     packetParse(data[i]); // Pass by value
   }
+  Serial.println("Exit parse");
 }
 
 // Data Wrangling Functions
@@ -379,6 +380,7 @@ void packetParse (uint8_t value) {
     // LED Indices and ColourCodes processed here
     case 3: case 4: case 5: case 6: case 7: case 8: case 9: case 10: case 11: case 12: case 13: case 14: case 15: case 16: case 17: case 18:
       if (isHexChar(value)){
+        Serial.println("Its Hex!");
         inPacket += (char) value;
         RXstate++;
       }
@@ -398,27 +400,36 @@ void packetParse (uint8_t value) {
       */
       if(inPacket.substring(0,3)=="###")
       {
+        Serial.println("Header is good");
         //### 00 FFFFFF 01 FFFFFF Checksum
         for(int i=3;i<20;i++) // Skip the header for checksum calculation purposes
         {
           calChkSum +=(byte) inPacket[i]; // Calculate value of CheckSum one byte at a time
+          //Serial.println(inPacket[i]);
         }
+        Serial.println(inPacket);
+        Serial.println(calChkSum);
         calChkSum %= 1000;
         //Serial.write("Calc'd ChkSum:");
-        //Serial.println(calChkSum);
+        Serial.println("Calculation done!");
+        
         if (calChkSum==reChkSum) //Check the checksums!
         {
+          Serial.println("Checksum is good!");
           //### 00 FFFFFF   01 FFFFFF Checksum
           //012 34 5678910 11,12 
           //leds[0].setColorCode(0x000000);
           // Ugly to look at but work - not currently function beyond two LEDs
+          Serial.println("Set the LEDs!");
           leds[hex2int(inPacket.substring(3,5).c_str())].setColorCode(hex2int(inPacket.substring(5,11).c_str()));
           leds[hex2int(inPacket.substring(11,13).c_str())].setColorCode(hex2int(inPacket.substring(13,19).c_str()));
           FastLED.show();
         }  
+
       }
       RXstate=0;
       RXindex=0;
+      calChkSum=0; // Gotta reset this otherwise it accumulates 
       inPacket="";
     break; 
   } 
