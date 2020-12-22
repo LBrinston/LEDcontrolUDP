@@ -1,7 +1,7 @@
 #include <Arduino.h> 
 #include <WiFi.h>
 #include <FastLED.h>
-#include "AsyncUDP.h"
+#include <AsyncUDP.h>
 #include "creds.h"
 
 #define NUM_LEDS 2
@@ -15,7 +15,7 @@
 * If LED# is a 1 byte hex value we could address up to 64 LEDs with one variable
 */
 
-// Instantiate our LED object
+// Object instantiations
 CRGB leds[NUM_LEDS];
 AsyncUDP udp;
 
@@ -27,33 +27,38 @@ String checkColourCode (CRGB *led);
 void receivePacket(AsyncUDPPacket packet);
 bool isHexChar(char ch);
 
+// Variables
 int packetNumber;
 
-int analogPin;
-int digitalPin;
+// LED vars
 int ledIndex;   // Index of LED to address
 
 unsigned int packetLen;
 
-int analogReq = 6;// set to the Max number of analog pins required
-int digitalInReq = 8;// set to the Max number of digital input pins required
-
 int ledInReq = NUM_LEDS; // Set to the max # of LEDS to control
 
+// Packet vars
 int checkSum = 0;
 int PacketIndex = 0;
 int TXstate = 0;
-int RXstate=0;
+String outPacket;
+
+uint8_t inByte = 0;
+
+int RXstate=0; // Tracks progression through packet reconstruction
 int RXindex=0;
-String outPacket; 
-String inPacket;
+String inPacket; // Holds the data parsed out of our UDP packet
+int inPacketLength; // Holds the length of that packet
+int calChkSum = 0; // Holds the value of the ChkSum calculated during parsing of the recieved packet
+int reChkSum = 0; // Holds the value of the ChkSum sent with the UDP packet
+ 
+// Timing vars
 unsigned long previousMillis=0;
 const long interval=100; // change this to 100 if needed
  
-
+// WiFi and UDP vars
 int udpPort = 1234;
-//Are we currently connected?
-boolean connected = false;
+boolean connected = false;//Are we currently connected?
 
 
 void setup() {
@@ -196,112 +201,34 @@ void loop() {
 
 void receivePacket(AsyncUDPPacket packet)
 {   
-  int calChkSum=0;
-  int recChkSum=0;
-  String ChkSum;
-  char inByte;
+  uint8_t *data = packet.data(); // copy pointer to the data
+  int dataLength = packet.length(); // copy the length of that data
+  String rxChkSum = "";
 
-  //inByte=Serial.read();
-  
-  //Serial.print("Byte ");
-  //Serial.print(inByte);
-  //Serial.print(" RX state ");
-  //Serial.println(RXstate);
-  //inPacket+="\0";
-  switch(RXstate)
-  {
-  case 0:
-  case 1:
-  case 2: 
-    if(inByte=='#')
-    {
-      inPacket += inByte;
-      RXstate++;
-    }
-    else
-    {
-      RXstate=0;
-      inPacket="";
-    }
-    break;
-// LED Indices and ColourCodes
-  case 3: case 4: case 5: case 6: case 7: case 8: case 9: case 10: case 11: case 12: case 13: case 14: case 15: case 16: case 17: case 18:
-   // if(inByte=='0' || inByte=='1')
-   // {
-   //   inPacket += inByte;
-   //   RXstate++;
-   // }
-   // else
-   // {
-   //   RXstate=0;
-   //   inPacket="";
-   // }
-   if (isHexChar(char ch)){
-     inPacket += inByte;
-     RXstate++;
-   }
-   else{
-     RXstate=0;
-     inPacket="";
-   }
-    break;
+  // Before parsing retrieve the ChkSum sent with the packet
+  // ###00FFFFFF01FFFFFFChkSum/c/r
+  // CheckSum = 3 bytes
+  for (int j = (dataLength-5); j < (dataLength-2);j++){
+  rxChkSum += (byte) data[j];
+  }
+  reChkSum = rxChkSum.toInt();
+  Serial.println(reChkSum);
 
-//  case 9: case 10: case 11:
-//      if(inByte >='0' && inByte<='9')
-//      {
-//        inPacket += inByte;
-//        RXstate++;
-//      }
-//      else
-//      {
-//        RXstate=0;
-//        inPacket="";
-//      }
-//      break;
-//
-   // chkSum   
-   case 20:
-      RXstate=0;
-      //Serial.println(inPacket);
-      if(inPacket.substring(0,3)=="###")
-      {
-        //Serial.println(inPacket);
-        //### 00 FFFFFF 01 FFFFFF Checksum
-        
-        for(int i=3;i<20;i++)
-        {
-          calChkSum +=(byte) inPacket[i];
-        }
-        ChkSum=inPacket.substring(9,12);
-        recChkSum=ChkSum.toInt();
-        if (calChkSum==recChkSum) //Check the checksum!
-        {
-          // Checksum checks out! Do what the packet says
-          
-          //### 00 FFFFFF 01 FFFFFF Checksum
+// Works - prints out correct data that is sent via UDP
+// Parse out the recieved packet inside this loop
+for (int i; i<dataLength; i++){
+  //Serial.write(data[i]);
+  packetParse(data[i]); // Pass by value
+  // Call packet evaluation/reconstruction from here - pass it the value at each index
 
-          // leds[].setColorCode(0x4355FF)
-          
-          for(int i=0;i<6;i++)
-          {
-            if (inPacket[i+3]=='0')
-            {
-              digitalWrite(13-i, LOW);
-            }
-            else
-            {
-              digitalWrite(13-i, HIGH);
-            }
-          }
-        }  
-      }
-      RXstate=0;
-      RXindex=0;
-      inPacket="";
+  // What about the check sum tho
+}
 
-      break; 
-  } 
+// Once packet has been validation act on the information in that packet?
+
+ 
   //Serial.println(inPacket);
+  
 }
 
 // ConvToString Functions
@@ -353,9 +280,6 @@ String checkColourCode (CRGB *led){
 
 // WiFi and UDP Functions
 //////////////////////////////////////////////////////////////////
-
-
-
 void connectToWiFi(const char * ssid, const char * pwd){
   Serial.println("Connecting to WiFi network: " + String(ssid));
 
@@ -390,9 +314,7 @@ void WiFiEvent(WiFiEvent_t event){
     }
 }
 
-
 void listenForUDP (){
-
       if(udp.listen(1234)) {
         Serial.print("UDP Listening on IP: ");
         Serial.println(WiFi.localIP());
@@ -421,3 +343,119 @@ void listenForUDP (){
 bool isHexChar(char ch) {
   return ('0' <= ch && ch <= '9') || ('A' <= ch && ch <= 'F');
 }
+
+
+// Packet Parsing
+// State machine for parsing packets
+// Expects a passed value to evaluate 
+///////////////////////////////////////////////
+void packetParse (uint8_t value) {
+// Example of expect packet format: ###00FFFFFF01FFFFFFChkSum/c/r
+   switch(RXstate)
+  {
+    // Cases 0-2 all do the same thing 
+    case 0:
+    case 1:
+    case 2: 
+      if(value) // For cases 0-2 we expect a '#'
+      {
+        RXstate++; // If the passed value is as expected (a #)
+        inPacket += (char) value; // Build inPacket one byte at a time
+        Serial.println("Case 2:");
+        Serial.println(inPacket);
+      }
+      else // If its not a '#' the packet is corrupt and we must start over
+      {
+        RXstate=0; // Reset our RXstate tracker
+        inPacket=""; // Empty the packet we were building 
+      }
+    break;
+    // LED Indices and ColourCodes should be processed here
+    case 3: case 4: case 5: case 6: case 7: case 8: case 9: case 10: case 11: case 12: case 13: case 14: case 15: case 16: case 17: case 18:
+      // if(inByte=='0' || inByte=='1')
+      // {
+      //   inPacket += inByte;
+      //   RXstate++;
+      // }
+      // else
+      // {
+      //   RXstate=0;
+      //   inPacket="";
+      // }
+      if (isHexChar(value)){
+        inPacket += (char) value;
+        RXstate++;
+        Serial.println(inPacket);
+        Serial.write("RxState:");
+        Serial.println(RXstate);
+      }
+      else{ // If our passed value is not a HexChar the packet must be corrupt and we must start over
+        RXstate=0; 
+        inPacket="";
+      }
+    break;
+
+    //  case 9: case 10: case 11:
+    //      if(inByte >='0' && inByte<='9')
+    //      {
+    //        inPacket += inByte;
+    //        RXstate++;
+    //      }
+    //      else
+    //      {
+    //        RXstate=0;
+    //        inPacket="";
+    //      }
+    //      break;
+    //
+   // chkSum
+   case 19:   
+      RXstate=0; //?
+      //Serial.println(inPacket)
+      // Proceed only if our packet has the correct header
+      Serial.println("Case 19:");
+      Serial.println(inPacket.substring(0,3));
+
+      if(inPacket.substring(0,3)=="###")
+      {
+        Serial.println("Header is good");
+        //### 00 FFFFFF 01 FFFFFF Checksum
+        for(int i=3;i<20;i++) // Skip the header for checksum calculation purposes
+        {
+          calChkSum +=(byte) inPacket[i]; // Calculate value of CheckSum one byte at a time
+        }
+        calChkSum %= 1000;
+        Serial.write("Calc'd ChkSum:");
+        Serial.println(calChkSum);
+        //ChkSum=inPacket.substring(9,12); 
+        //recChkSum=ChkSum.toInt();       // This isn't the actual recieved chkSum?!
+        if (calChkSum==reChkSum) //Check the checksums!
+        {
+          Serial.println("Thec Checksum checks out!");
+          // Checksum checks out! Do what the packet says
+          
+          //### 00 FFFFFF 01 FFFFFF Checksum
+
+          // leds[].setColorCode(0x4355FF)
+          /*
+          for(int i=0;i<6;i++)
+          {
+            if (inPacket[i+3]=='0')
+            {
+              digitalWrite(13-i, LOW);
+            }
+            else
+            {
+              digitalWrite(13-i, HIGH);
+            }
+          }*/
+
+        }  
+      }
+      RXstate=0;
+      RXindex=0;
+      inPacket="";
+    break; 
+  } 
+}
+
