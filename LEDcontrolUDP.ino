@@ -8,9 +8,18 @@
 #define DATA_PIN 25
 
 /*
+* @title: LEDcontrolUDP
+* @brief: Firmware written for ECET230 Final Project - control of WS2812b addressable RGB LEDs via UDP.
+* @limitations: Can only control 2 LEDs at current and only accepts info on LED# and colourValue as a 26bit value (package as a 32bit value).
+* @author: Liam Brinston
+* @date: 2020/12/25
+*
+*/
+
+/*
 * Packet design:
-* "###LED#0xRRGGBBLED#0xRRGGBB"
-* 3 byte, 1 byte, 3 bytes, 1 byte, 3 bytes = 14 bytes <- for two leds
+* "###LED#0xRRGGBBLED#0xRRGGBBChecksum"
+* 3 byte, 1 byte, 6 bytes, 1 byte, 6 bytes, 3Bytes = 24 bytes <- for two leds
 *
 * If LED# is a 1 byte hex value we could address up to 64 LEDs with one variable
 */
@@ -53,175 +62,26 @@ int inPacketLength; // Holds the length of that packet
 int calChkSum = 0; // Holds the value of the ChkSum calculated during parsing of the recieved packet
 int reChkSum = 0; // Holds the value of the ChkSum sent with the UDP packet
  
-// Timing vars
-unsigned long previousMillis=0;
-const long interval=100; // change this to 100 if needed
- 
 // WiFi and UDP vars
 int udpPort = 1234;
 boolean connected = false;//Are we currently connected?
 
 
 void setup() {
-
   // Configure our LED object
   FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
   Serial.begin(115200);
-  connectToWiFi(mySSID, myPASSWORD);
-  
-  
+  connectToWiFi(mySSID, myPASSWORD);  
   inPacket=""; 
-
-  // put your setup code here, to run once:
-/*  
-  for (int pin = 0; pin < digitalInReq; pin++)
-  {
-	  pinMode(pin, INPUT); // set the number of input pins required
-  }
-  for(int pin=8;pin<14;pin++)
-  {
-    pinMode(pin,OUTPUT); // set the number of ouput pins required
-  }
-  digitalWrite(12, LOW); //flash 2LEDS acktive low for 1 Sec
-  digitalWrite(13, LOW);
-  delay(1000);
-  digitalWrite(12, HIGH);
-  digitalWrite(13, HIGH);
-*/
 }
 
 void loop() {
-	// put your main code here, to run repeatedly:
-  unsigned long currentMillis = millis();
-	
-/*
-* Packet design:
-* "###LED#0xRRGGBBLED#0xRRGGBB"
-* 3 byte, 1 byte, 3 bytes, 1 byte, 3 bytes = 14 bytes <- for two leds
-*
-* If LED# is a 1 byte hex value we could address up to 64 LEDs with one variable
-*/
-  
-//  switch(TXstate)
-//	{
-//	case 0: // begin making output packet
-//		outPacket = "###"; //header
-//		checkSum = 0;
-//		PacketIndex = 0;
-//		analogPin=0;
-//    //digitalPin=0;
-//    
-//    ledIndex = 0; // FastLED uses an ledArray object that starts at index 0
-//    digitalPin=digitalInReq -1;//start with Most significant pin 
-//
-//		outPacket += convertIntTo3ByteString(packetNumber++); //inc packet number add to outPacket string
-//		packetNumber %= 1000;   //packetnumber rollover code 
-//		TXstate = 1;  //move to next state
-//		break;
-//
-//  // ledIndex reporting
-//	case 1:	// continue making output packet and start with index of first LED to control
-//    //outPacket += convertIntTo4ByteString(analogRead(analogPin++));
-//    outPacket += convertIntTo2ByteString(ledIndex);
-//    
-//    // In OG protocol Wayne reported all analog pin states sequentially. We want to alternate ledInex, ledColour, etc
-//    // Until ledIndex = NUM_LEDS?
-//    // Then we proceed to chkSum
-//    // Can probably unconditionally proceed to colour reporting?
-//
-//    if(ledIndex == (NUM_LEDS-1)){
-//      TXstate = 3; // Proceed to chkSum
-//    }
-//    else
-//    {
-//      TXstate = 2; // Proceed to ledColour reporting
-//    }
-//    
-//    /* Original
-//    if (analogPin == analogReq) // In OG protocol Wayne reported all analog pin states sequentially. We want to alternate ledInex, ledColour, 
-//		{
-//			TXstate = 2;// move to next state when all analog complete
-//		}*/
-//		break;
-//
-//  // ledColour reporting
-//	case 2:
-//		outPacket += checkColourCode(&leds[ledIndex]);
-//    ledIndex++; // Increase our ledIndex
-//
-//		if (ledIndex == (NUM_LEDS-1))
-//		{
-//			TXstate = 3;// Proceed to chkSum
-//		}
-//    else 
-//    {
-//      TXstate = 2; // Go back to ledIndex reporting
-//    }
-//		break;
-//	case 3:
-//    for(int i = 3; i < 38; i++)
-//    {
-//      checkSum +=(byte)outPacket[i];//calculate check sum
-//    }
-//    checkSum %= 1000; //trucate check sum to 3 digits
-//		outPacket += convertIntTo3ByteString(checkSum);
-//		outPacket += "\r\n";// add carriage return, line feed
-//		packetLen = outPacket.length();//set packet length to send
-//    TXstate = 4; //move to next state
-//		break;
-//	case 4: // stay in case 4 until entire packet is sent and interval time expires
-//		if (PacketIndex == packetLen)// when entire packet is sent check interval
-//		{
-//        //https://www.arduino.cc/en/tutorial/BlinkWithoutDelay
-//        if (currentMillis - previousMillis >= interval) 
-//        {
-//          // save the last time the packet was sent
-//          previousMillis = currentMillis;
-//			    TXstate = 0; //reset the state when the whole packet is sent and after the interval
-//        }  
-//		}
-//		break;
-//	}
-//  if (outPacket[PacketIndex]!=0)// if a packet is available send it
-//  {
-//    // replace with UDP
-//	  Serial.write(outPacket[PacketIndex++]);//blocking function send one byte at a time
-//  }
-  // replace with UDP
-  
+  // Listen for packets
   if (udp.listen(udpPort)){
     udp.onPacket(receivePacket); // callback - call receivePacket when there is a UDP Packet      
-  }
-  /*
-  if (Serial.available() > 0) // check if any bytes available to receive
-  {
-    receivePacket(); // call receive function
-  }*/
- 
+  } 
 }
 
-void receivePacket(AsyncUDPPacket packet)
-{   
-  uint8_t *data = packet.data(); // copy pointer to the data
-  int dataLength = packet.length(); // copy the length of that data
-  String rxChkSum = "";
-
-  // Before parsing retrieve the ChkSum sent with the packet
-  // ###00FFFFFF01FFFFFFChkSum/c/r
-  // CheckSum = 3 bytes
-  for (int j = (dataLength-5); j < (dataLength-2);j++){
-    rxChkSum += (char) data[j];
-  }
-  reChkSum = rxChkSum.toInt();
-  Serial.println(reChkSum);
-
-  // Works - prints out correct data that is sent via UDP
-  // Parse out the recieved packet inside this loop minus the checksum and \c\r
-  for (int i; i<(dataLength-2); i++){
-    packetParse(data[i]); // Pass by value
-  }
-  Serial.println("Exit parse");
-}
 
 // Data Wrangling Functions
 //////////////////////////////////////////////////////////////////
@@ -327,6 +187,7 @@ void WiFiEvent(WiFiEvent_t event){
     }
 }
 
+// Listens for UDP packets on the specified port
 void listenForUDP (){
       if(udp.listen(1234)) {
         Serial.print("UDP Listening on IP: ");
@@ -380,9 +241,12 @@ void packetParse (uint8_t value) {
     // LED Indices and ColourCodes processed here
     case 3: case 4: case 5: case 6: case 7: case 8: case 9: case 10: case 11: case 12: case 13: case 14: case 15: case 16: case 17: case 18:
       if (isHexChar(value)){
-        Serial.println("Its Hex!");
+        //Debug
+        //Serial.println("Its Hex!");
         inPacket += (char) value;
         RXstate++;
+        //Debug
+        Serial.println(inPacket);
       }
       else{ // If our passed value is not a HexChar the packet must be corrupt and we must start over
         RXstate=0; 
@@ -398,29 +262,34 @@ void packetParse (uint8_t value) {
       * to - exclusive
       * Compared to the C++ & C# implemntation of .substring(pos, len)
       */
+     //Debug
+     //Serial.println((inPacket.substring(0,3)));
+
       if(inPacket.substring(0,3)=="###")
       {
-        Serial.println("Header is good");
+        //Serial.println("Header is good");
         //### 00 FFFFFF 01 FFFFFF Checksum
         for(int i=3;i<20;i++) // Skip the header for checksum calculation purposes
         {
           calChkSum +=(byte) inPacket[i]; // Calculate value of CheckSum one byte at a time
           //Serial.println(inPacket[i]);
         }
-        Serial.println(inPacket);
-        Serial.println(calChkSum);
+        //Debug
+        //Serial.println(inPacket);
         calChkSum %= 1000;
-        //Serial.write("Calc'd ChkSum:");
-        Serial.println("Calculation done!");
+        //Serial.println(calChkSum);
+        //Serial.println(reChkSum);
+        //Serial.println("Calculation done!");
         
         if (calChkSum==reChkSum) //Check the checksums!
         {
-          Serial.println("Checksum is good!");
+          //Debug
+          //Serial.println("Checksum is good!");
+          
           //### 00 FFFFFF   01 FFFFFF Checksum
           //012 34 5678910 11,12 
-          //leds[0].setColorCode(0x000000);
           // Ugly to look at but work - not currently function beyond two LEDs
-          Serial.println("Set the LEDs!");
+          //Serial.println("Set the LEDs!");
           leds[hex2int(inPacket.substring(3,5).c_str())].setColorCode(hex2int(inPacket.substring(5,11).c_str()));
           leds[hex2int(inPacket.substring(11,13).c_str())].setColorCode(hex2int(inPacket.substring(13,19).c_str()));
           FastLED.show();
@@ -433,5 +302,37 @@ void packetParse (uint8_t value) {
       inPacket="";
     break; 
   } 
+}
+
+// Callback function for parsing of a recieved UDP packet
+void receivePacket(AsyncUDPPacket packet)
+{   
+  uint8_t *data = packet.data(); // copy pointer to the data
+  int dataLength = packet.length(); // copy the length of that data
+  String rxChkSum = "";
+
+  // Debugging
+  Serial.println(dataLength);
+  for(int k=0; k < dataLength;k++){
+    Serial.print(data[k]);
+  }
+
+
+  // Before parsing retrieve the ChkSum sent with the packet
+  // ###00FFFFFF01FFFFFFChkSum/c/r
+  // CheckSum = 3 bytes
+  for (int j = (dataLength-5); j < (dataLength-2);j++){
+    rxChkSum += (char) data[j];
+  }
+  reChkSum = rxChkSum.toInt();
+  Serial.println(reChkSum);
+
+  // Works - prints out correct data that is sent via UDP
+  // Parse out the recieved packet inside this loop minus the checksum and \c\r
+  for (int i; i<(dataLength-2); i++){
+    //(dataLength-2)
+    packetParse(data[i]); // Pass by value
+  }
+  Serial.println("Exit parse");
 }
 
